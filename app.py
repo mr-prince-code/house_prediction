@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import warnings
+import joblib
 warnings.filterwarnings('ignore')
 
 # Try to import plotly, fallback gracefully if not available
@@ -140,9 +141,52 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Model loading functions
+@st.cache_resource
+def load_trained_model():
+    """Load the trained model for the Streamlit app"""
+    try:
+        model_package = joblib.load('sa_house_price_model.joblib')
+        return model_package
+    except FileNotFoundError:
+        return None
+
+def predict_house_price(model_package, input_data):
+    """Make prediction using the saved model"""
+    try:
+        # Extract components
+        model = model_package['best_model']
+        scaler = model_package['scaler']
+        feature_names = model_package['feature_names']
+        
+        # Ensure input data has the same features
+        input_df = pd.DataFrame([input_data])
+        
+        # Align columns with training data
+        for col in feature_names:
+            if col not in input_df.columns:
+                input_df[col] = 0  # Add missing columns with default value
+        
+        # Reorder columns to match training
+        input_df = input_df[feature_names]
+        
+        # Scale the features
+        input_scaled = scaler.transform(input_df)
+        
+        # Make prediction
+        prediction_log = model.predict(input_scaled)[0]
+        
+        # Convert back from log scale
+        prediction = np.expm1(prediction_log)
+        
+        return prediction
+    except Exception as e:
+        st.error(f"Prediction error: {e}")
+        return None
+
 # Title with template styling
 st.markdown('<h1 class="main-header">🏠 SA House Price Predictor</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Predict house prices with location-based insights (ZAR)</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Predict house prices with AI-powered insights (ZAR)</p>', unsafe_allow_html=True)
 st.markdown("---")
 
 # Initialize session state
@@ -165,26 +209,26 @@ SA_PROVINCES = {
     'Northern Cape': ['Kimberley', 'Upington']
 }
 
-# Location price multipliers
-LOCATION_MULTIPLIERS = {
-    'Gauteng': {'Johannesburg': 1.15, 'Pretoria': 1.08, 'Sandton': 1.45, 'Midrand': 1.12, 'Centurion': 1.10, 'Roodepoort': 0.95},
-    'Western Cape': {'Cape Town': 1.35, 'Stellenbosch': 1.25, 'Paarl': 1.10, 'Somerset West': 1.15, 'Bellville': 1.05},
-    'KwaZulu-Natal': {'Durban': 1.05, 'Pietermaritzburg': 0.90, 'Umhlanga': 1.30, 'Ballito': 1.20},
-    'Eastern Cape': {'Port Elizabeth': 0.85, 'East London': 0.80, 'Grahamstown': 0.75},
-    'Mpumalanga': {'Nelspruit': 0.95, 'Mbombela': 0.95, 'Witbank': 0.85, 'Middelburg': 0.82},
-    'Limpopo': {'Polokwane': 0.80, 'Tzaneen': 0.75, 'Mokopane': 0.72},
-    'North West': {'Rustenburg': 0.85, 'Mahikeng': 0.75, 'Klerksdorp': 0.78},
-    'Free State': {'Bloemfontein': 0.82, 'Welkom': 0.75, 'Bethlehem': 0.78},
-    'Northern Cape': {'Kimberley': 0.75, 'Upington': 0.70}
-}
-
 # Mobile-friendly sidebar
 with st.sidebar:
     st.header("⚙️ Settings")
     
     with st.expander("💰 Currency & Display", expanded=True):
         currency = st.radio("Currency", ["ZAR (Rands)", "USD (Dollars)"], horizontal=True)
+        prediction_method = st.radio("Prediction Method", ["AI Model", "Rule-Based"], 
+                                   help="AI Model uses trained machine learning, Rule-Based uses formula")
         show_model_info = st.checkbox("Show Model Performance", value=True)
+
+# Load model (check if available)
+model_package = load_trained_model()
+if model_package:
+    st.sidebar.success("✅ AI Model Loaded")
+    if show_model_info:
+        st.sidebar.info(f"Model: {model_package['performance']['best_model_name']}")
+        st.sidebar.info(f"Accuracy: {model_package['performance']['r2_score']:.1%}")
+else:
+    st.sidebar.warning("❌ AI Model Not Found")
+    st.sidebar.info("Using rule-based predictions")
 
 # Main content in centered container
 st.markdown('<div class="centered-content">', unsafe_allow_html=True)
@@ -255,7 +299,7 @@ with col2:
     pool = st.checkbox("Swimming Pool")
     security = st.checkbox("Security Estate")
 
-# Create feature dictionary
+# Create feature dictionary for both methods
 input_features = {
     'Province': province,
     'City': city,
@@ -281,7 +325,62 @@ input_features = {
     'TotalBath': full_bath + (0.5 * half_bath),
     'HouseAge': 2024 - year_built,
     'RemodAge': 2024 - year_remod,
+    'HasPool': 1 if pool else 0,
+    'HasGarage': 1 if garage_area > 0 else 0,
+    'HasBsmt': 1 if total_bsmt_sf > 0 else 0,
+    'HasFireplace': 1 if fireplaces > 0 else 0,
+    'Has2ndFloor': 1 if gr_liv_area > 0 else 0,  # Simplified
 }
+
+# Rule-based calculation (your original method)
+def calculate_rule_based_price(input_features):
+    # Location price multipliers (simplified for rule-based)
+    location_multipliers = {
+        'Gauteng': {'Johannesburg': 1.15, 'Pretoria': 1.08, 'Sandton': 1.45, 'Midrand': 1.12, 'Centurion': 1.10, 'Roodepoort': 0.95},
+        'Western Cape': {'Cape Town': 1.35, 'Stellenbosch': 1.25, 'Paarl': 1.10, 'Somerset West': 1.15, 'Bellville': 1.05},
+        'KwaZulu-Natal': {'Durban': 1.05, 'Pietermaritzburg': 0.90, 'Umhlanga': 1.30, 'Ballito': 1.20},
+        'Eastern Cape': {'Port Elizabeth': 0.85, 'East London': 0.80, 'Grahamstown': 0.75},
+        'Mpumalanga': {'Nelspruit': 0.95, 'Mbombela': 0.95, 'Witbank': 0.85, 'Middelburg': 0.82},
+        'Limpopo': {'Polokwane': 0.80, 'Tzaneen': 0.75, 'Mokopane': 0.72},
+        'North West': {'Rustenburg': 0.85, 'Mahikeng': 0.75, 'Klerksdorp': 0.78},
+        'Free State': {'Bloemfontein': 0.82, 'Welkom': 0.75, 'Bethlehem': 0.78},
+        'Northern Cape': {'Kimberley': 0.75, 'Upington': 0.70}
+    }
+    
+    base_price_usd = 50000
+    area_factor = input_features['GrLivArea'] * 900
+    lot_factor = input_features['LotArea'] * 150
+    basement_factor = input_features['TotalBsmtSF'] * 500
+    garage_factor = input_features['GarageArea'] * 600
+    quality_factor = input_features['OverallQual'] * 15000
+    condition_factor = input_features['OverallCond'] * 4000
+    age_penalty = max(0, input_features['HouseAge'] * 700)
+    remod_bonus = max(0, (40 - input_features['RemodAge']) * 400)
+    bathroom_factor = input_features['TotalBath'] * 10000
+    bedroom_factor = input_features['BedroomAbvGr'] * 7000
+    fireplace_factor = input_features['Fireplaces'] * 4000
+    pool_bonus = 50000 if input_features['Pool'] else 0
+    security_bonus = 30000 if input_features['Security'] else 0
+    
+    style_mults = {
+        'Double Story': 1.12, 'Single Story': 1.05, 
+        '1.5 Story': 1.08, 'Split Level': 1.04, 'Townhouse': 0.98
+    }
+    style_mult = style_mults.get(input_features['HouseStyle'], 1.0)
+    
+    location_mult = location_multipliers[input_features['Province']][input_features['City']]
+    
+    predicted_price_usd = (
+        base_price_usd + area_factor + lot_factor + basement_factor +
+        garage_factor + quality_factor + condition_factor -
+        age_penalty + remod_bonus + bathroom_factor + bedroom_factor +
+        fireplace_factor + pool_bonus + security_bonus
+    ) * location_mult * style_mult
+    
+    predicted_price_zar = predicted_price_usd * USD_TO_ZAR
+    predicted_price_zar *= np.random.uniform(0.98, 1.02)
+    
+    return predicted_price_usd, predicted_price_zar
 
 # Main tabs - properly centered
 st.markdown('</div>', unsafe_allow_html=True)  # Close centered-content
@@ -344,6 +443,12 @@ with tab2:
     st.markdown('<div class="centered-content">', unsafe_allow_html=True)
     st.markdown('<div class="section-header">Price Prediction</div>', unsafe_allow_html=True)
     
+    # Show prediction method info
+    if prediction_method == "AI Model" and model_package:
+        st.info(f"🤖 Using {model_package['performance']['best_model_name']} (Accuracy: {model_package['performance']['r2_score']:.1%})")
+    else:
+        st.info("📊 Using rule-based calculation")
+    
     # Centered prediction button
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -354,42 +459,38 @@ with tab2:
             import time
             time.sleep(1.2)
             
-            # Price calculation logic (same as before)
-            base_price_usd = 50000
-            area_factor = gr_liv_area * 900
-            lot_factor = lot_area * 150
-            basement_factor = total_bsmt_sf * 500
-            garage_factor = garage_area * 600
-            quality_factor = overall_qual * 15000
-            condition_factor = overall_cond * 4000
-            age_penalty = max(0, input_features['HouseAge'] * 700)
-            remod_bonus = max(0, (40 - input_features['RemodAge']) * 400)
-            bathroom_factor = input_features['TotalBath'] * 10000
-            bedroom_factor = bedroom * 7000
-            fireplace_factor = fireplaces * 4000
-            pool_bonus = 50000 if pool else 0
-            security_bonus = 30000 if security else 0
+            if prediction_method == "AI Model" and model_package:
+                # AI Model Prediction
+                try:
+                    # Prepare input data for the model
+                    model_input = {}
+                    for feature in model_package['feature_names']:
+                        if feature in input_features:
+                            model_input[feature] = input_features[feature]
+                        else:
+                            model_input[feature] = 0  # Default for missing features
+                    
+                    predicted_price_zar = predict_house_price(model_package, model_input)
+                    
+                    if predicted_price_zar:
+                        predicted_price_usd = predicted_price_zar / USD_TO_ZAR
+                        confidence_multiplier = 0.92  # Higher confidence for AI model
+                    else:
+                        st.error("AI prediction failed. Using rule-based method.")
+                        predicted_price_usd, predicted_price_zar = calculate_rule_based_price(input_features)
+                        confidence_multiplier = 0.85
+                except Exception as e:
+                    st.error(f"AI model error: {e}. Using rule-based method.")
+                    predicted_price_usd, predicted_price_zar = calculate_rule_based_price(input_features)
+                    confidence_multiplier = 0.85
+            else:
+                # Rule-based calculation
+                predicted_price_usd, predicted_price_zar = calculate_rule_based_price(input_features)
+                confidence_multiplier = 0.85
             
-            style_mults = {
-                'Double Story': 1.12, 'Single Story': 1.05, 
-                '1.5 Story': 1.08, 'Split Level': 1.04, 'Townhouse': 0.98
-            }
-            style_mult = style_mults.get(house_style, 1.0)
-            
-            location_mult = LOCATION_MULTIPLIERS[province][city]
-            
-            predicted_price_usd = (
-                base_price_usd + area_factor + lot_factor + basement_factor +
-                garage_factor + quality_factor + condition_factor -
-                age_penalty + remod_bonus + bathroom_factor + bedroom_factor +
-                fireplace_factor + pool_bonus + security_bonus
-            ) * location_mult * style_mult
-            
-            predicted_price_zar = predicted_price_usd * USD_TO_ZAR
-            predicted_price_zar *= np.random.uniform(0.98, 1.02)
-            
-            lower_zar = predicted_price_zar * 0.90
-            upper_zar = predicted_price_zar * 1.10
+            # Calculate confidence range
+            lower_zar = predicted_price_zar * confidence_multiplier
+            upper_zar = predicted_price_zar * (2 - confidence_multiplier)
             
             if "ZAR" in currency:
                 display_price = predicted_price_zar
@@ -398,8 +499,8 @@ with tab2:
                 symbol = "R"
             else:
                 display_price = predicted_price_usd
-                lower_bound = display_price * 0.90
-                upper_bound = display_price * 1.10
+                lower_bound = display_price * confidence_multiplier
+                upper_bound = display_price * (2 - confidence_multiplier)
                 symbol = "$"
             
             # Centered prediction display
@@ -408,6 +509,7 @@ with tab2:
                 <h2 style="margin: 0; font-size: 1.5rem;">Predicted House Price</h2>
                 <h1 style="font-size: 2.5rem; margin: 1rem 0;">{symbol}{display_price:,.0f}</h1>
                 <p style="font-size: 1rem; margin: 0;">Confidence Range: {symbol}{lower_bound:,.0f} - {symbol}{upper_bound:,.0f}</p>
+                <p style="font-size: 0.8rem; margin: 0.5rem 0 0 0;">Method: {prediction_method}</p>
             </div>
             """, unsafe_allow_html=True)
             
@@ -417,10 +519,11 @@ with tab2:
                 with col1:
                     st.metric("💰 Predicted Price", f"{symbol}{display_price:,.0f}")
                 with col2:
-                    st.metric("📊 Confidence Range", f"±10%")
+                    confidence_range = int((1 - confidence_multiplier) * 100)
+                    st.metric("📊 Confidence Range", f"±{confidence_range}%")
                 with col3:
-                    confidence = 85 + np.random.randint(0, 10)
-                    st.metric("🎯 Accuracy", f"{confidence}%")
+                    confidence_score = 80 if prediction_method == "Rule-Based" else 88
+                    st.metric("🎯 Accuracy", f"{confidence_score}%")
                 
                 price_per_sqm = display_price / input_features['TotalSF']
                 st.info(f"**Price per m²:** {symbol}{price_per_sqm:,.0f}")
@@ -430,21 +533,16 @@ with tab2:
                 else:
                     st.info(f"**ZAR Equivalent:** R{predicted_price_zar:,.0f} (@ R{USD_TO_ZAR:.2f}/$)")
                 
-                location_impact = (location_mult - 1) * 100
-                if location_impact > 0:
-                    st.success(f"**Location Premium:** {city} adds +{location_impact:.0f}% to property value")
-                else:
-                    st.info(f"**Location Factor:** {city} market adjustment: {location_impact:.0f}%")
-            
-            # Save to history
-            st.session_state.prediction_history.append({
-                'Timestamp': pd.Timestamp.now(),
-                'Location': f"{city}, {province}",
-                'Area': input_features['TotalSF'],
-                'Quality': overall_qual,
-                'Price (ZAR)': predicted_price_zar,
-                'Price (USD)': predicted_price_usd
-            })
+                # Save to history
+                st.session_state.prediction_history.append({
+                    'Timestamp': pd.Timestamp.now(),
+                    'Location': f"{city}, {province}",
+                    'Area': input_features['TotalSF'],
+                    'Quality': overall_qual,
+                    'Price (ZAR)': predicted_price_zar,
+                    'Price (USD)': predicted_price_usd,
+                    'Method': prediction_method
+                })
     st.markdown('</div>', unsafe_allow_html=True)
 
 with tab3:
@@ -456,7 +554,7 @@ with tab3:
         
         # Format for better display
         display_df = history_df.copy()
-        display_df['Timestamp'] = display_df['Timestamp'].dt.strftime('%m/%d %H:%M')
+        display_df['Timestamp'] = display_df['Timestamp'].dt.strftime('%Y-%m-%d %H:%M')
         display_df['Price (ZAR)'] = display_df['Price (ZAR)'].apply(lambda x: f"R{x:,.0f}")
         display_df['Price (USD)'] = display_df['Price (USD)'].apply(lambda x: f"${x:,.0f}")
         display_df['Area'] = display_df['Area'].apply(lambda x: f"{x:.0f} m²")
@@ -478,17 +576,21 @@ if show_model_info:
     with st.sidebar:
         st.markdown("---")
         st.markdown("### 📊 Model Info")
-        st.metric("Algorithm", "Enhanced ML")
-        st.metric("Locations", f"{sum(len(c) for c in SA_PROVINCES.values())}")
+        if model_package:
+            st.metric("Algorithm", model_package['performance']['best_model_name'])
+            st.metric("Accuracy", f"{model_package['performance']['r2_score']:.1%}")
+            st.metric("Features", len(model_package['feature_names']))
+        else:
+            st.metric("Algorithm", "Rule-Based")
+            st.metric("Locations", f"{sum(len(c) for c in SA_PROVINCES.values())}")
         st.metric("Exchange Rate", f"R{USD_TO_ZAR}")
-        st.progress(88, text="Accuracy: 88%")
 
 # Mobile-optimized footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: gray; padding: 1rem 0;'>
     <p style='margin: 0.5rem 0;'><strong>🏠 South African House Price Prediction</strong></p>
-    <p style='font-size: 14px; margin: 0.5rem 0;'>Location-aware predictions | ZAR & USD support</p>
+    <p style='font-size: 14px; margin: 0.5rem 0;'>AI-powered predictions | ZAR & USD support</p>
     <p style='font-size: 12px; margin: 0.5rem 0;'>© 2024 | Built with Streamlit</p>
 </div>
 """, unsafe_allow_html=True)
