@@ -591,6 +591,6 @@ st.markdown("""
 <div style='text-align: center; color: gray; padding: 1rem 0;'>
     <p style='margin: 0.5rem 0;'><strong>🏠 South African House Price Prediction</strong></p>
     <p style='font-size: 14px; margin: 0.5rem 0;'>AI-powered predictions | ZAR & USD support</p>
-    <p style='font-size: 12px; margin: 0.5rem 0;'>© 2024 | Built with Streamlit</p>
+    <p style='font-size: 12px; margin: 0.5rem 0;'>© 2025 | Built with Streamlit</p>
 </div>
 """, unsafe_allow_html=True)
