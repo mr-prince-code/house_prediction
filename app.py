@@ -1,596 +1,771 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import pickle
+import os
 import warnings
-import joblib
 warnings.filterwarnings('ignore')
 
-# Try to import plotly, fallback gracefully if not available
-try:
-    import plotly.express as px
-    import plotly.graph_objects as go
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
-
-# Page configuration for mobile
+# Page configuration
 st.set_page_config(
-    page_title="SA House Price Predictor",
+    page_title="AI House Price Predictor",
     page_icon="🏠",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-# Enhanced CSS for proper centering and mobile responsiveness
+# Sophisticated white theme CSS
 st.markdown("""
 <style>
-    /* Base styling with centering */
+    /* Main background - clean white */
+    .stApp {
+        background: #ffffff;
+        font-family: 'Inter', sans-serif;
+    }
+    
+    /* Header styling with elegant shadow */
     .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
+        background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+        padding: 3rem 2rem;
+        border-radius: 25px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.08);
         text-align: center;
-        color: #2c3e50;
-        padding: 1rem 0;
-        margin-bottom: 0.5rem;
-        width: 100%;
-    }
-    
-    .sub-header {
-        font-size: 1.2rem;
-        text-align: center;
-        color: #7f8c8d;
         margin-bottom: 2rem;
-        width: 100%;
+        border: 1px solid rgba(255,255,255,0.8);
+        position: relative;
+        overflow: hidden;
     }
     
-    /* Centered containers */
-    .centered-container {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        width: 100%;
+    .main-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     }
     
-    .centered-content {
-        max-width: 800px;
-        width: 100%;
-        margin: 0 auto;
+    .main-header h1 {
+        background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-size: 3.5rem;
+        margin: 0;
+        font-weight: 800;
+        letter-spacing: -0.5px;
     }
     
-    /* Template-inspired styling */
-    .section-header {
-        font-size: 1.5rem;
+    .main-header p {
+        color: #6c757d;
+        font-size: 1.3rem;
+        margin-top: 0.5rem;
+        font-weight: 400;
+    }
+    
+    /* Enhanced metric cards with subtle shadows */
+    [data-testid="metric-container"] {
+        background: #ffffff;
+        padding: 1.5rem;
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+        border: 1px solid rgba(0,0,0,0.05);
+        transition: all 0.3s ease;
+    }
+    
+    [data-testid="metric-container"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+    }
+    
+    /* Input sections with clean design */
+    .stNumberInput, .stSlider {
+        background: #ffffff;
+        padding: 1rem;
+        border-radius: 12px;
+        border: 1px solid #e9ecef;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+    }
+    
+    /* Premium button styling */
+    .stButton button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        font-size: 1.3rem;
         font-weight: 600;
-        color: #2c3e50;
-        border-bottom: 2px solid #3498db;
-        padding-bottom: 0.5rem;
-        margin: 2rem 0 1rem 0;
-        text-align: center;
+        padding: 1.2rem 2.5rem;
+        border-radius: 15px;
+        border: none;
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        position: relative;
+        overflow: hidden;
     }
     
+    .stButton button:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 12px 35px rgba(102, 126, 234, 0.4);
+    }
+    
+    .stButton button::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+        transition: left 0.5s;
+    }
+    
+    .stButton button:hover::after {
+        left: 100%;
+    }
+    
+    /* Premium result box with elegant gradient */
     .prediction-box {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
-        border-radius: 10px;
-        color: white;
+        padding: 4rem 3rem;
+        border-radius: 25px;
         text-align: center;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        margin: 1rem auto;
-        max-width: 600px;
-        width: 100%;
+        box-shadow: 0 20px 60px rgba(102, 126, 234, 0.3);
+        margin: 2rem 0;
+        position: relative;
+        overflow: hidden;
+        border: none;
     }
     
-    .feature-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 8px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        border-left: 4px solid #3498db;
-        margin: 0.5rem auto;
-        max-width: 400px;
+    .prediction-box::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+        animation: float 6s ease-in-out infinite;
     }
     
-    /* Mobile responsiveness */
-    @media (max-width: 768px) {
-        .main-header {
-            font-size: 2rem;
-            padding: 0.5rem 0;
-        }
-        
-        .sub-header {
-            font-size: 1rem;
-        }
-        
-        .prediction-box {
-            padding: 1.5rem;
-            margin: 0.5rem auto;
-            max-width: 90%;
-        }
-        
-        .feature-card {
-            padding: 1rem;
-            margin: 0.25rem auto;
-            max-width: 90%;
-        }
-        
-        .section-header {
-            font-size: 1.3rem;
-            margin: 1.5rem 0 0.75rem 0;
-        }
-        
-        .centered-content {
-            max-width: 95%;
-            padding: 0 10px;
-        }
+    @keyframes float {
+        0%, 100% { transform: translateY(0px) rotate(0deg); }
+        50% { transform: translateY(-20px) rotate(180deg); }
     }
     
-    /* Center all streamlit elements */
-    .stButton>button {
-        width: 100%;
-        margin: 0 auto;
+    .prediction-box h2 {
+        color: white;
+        font-size: 2.8rem;
+        margin: 0;
+        text-shadow: 2px 2px 8px rgba(0,0,0,0.2);
+        font-weight: 700;
+        position: relative;
+        z-index: 2;
     }
     
-    .stSelectbox, .stNumberInput, .stSlider {
-        margin: 0 auto;
+    /* Enhanced info boxes */
+    .info-box {
+        background: #ffffff;
+        padding: 2rem;
+        border-radius: 20px;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+        margin: 1rem 0;
+        border: 1px solid rgba(0,0,0,0.05);
+        transition: transform 0.3s ease;
+        position: relative;
+        overflow: hidden;
     }
     
-    /* Center tabs */
-    .stTabs {
-        margin: 0 auto;
+    .info-box::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 4px;
+        height: 100%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .info-box:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 12px 40px rgba(0,0,0,0.12);
+    }
+    
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 1rem;
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 16px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background: #ffffff;
+        border-radius: 12px;
+        padding: 1rem 2rem;
+        font-weight: 600;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+        border: 1px solid #e9ecef;
+        transition: all 0.3s ease;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+        box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3) !important;
+    }
+    
+    /* Hide Streamlit branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    .stDeployButton {display:none;}
+    
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: rgba(0,0,0,0.05);
+        border-radius: 10px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 10px;
+    }
+    
+    /* Section headers */
+    .section-header {
+        background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+        padding: 2rem;
+        border-radius: 20px;
+        margin: 2rem 0;
+        border-left: 4px solid #667eea;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    }
+    
+    /* Progress bar styling */
+    .stProgress > div > div > div > div {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    /* Success message styling */
+    .success-message {
+        background: linear-gradient(135deg, #00b09b 0%, #96c93d 100%);
+        padding: 2rem;
+        border-radius: 20px;
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        margin: 2rem 0;
+        color: white;
+    }
+    
+    /* Warning message styling */
+    .warning-message {
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+        padding: 2rem;
+        border-radius: 20px;
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        margin: 2rem 0;
+        color: white;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Model loading functions
+# Header with premium design
+st.markdown("""
+<div class="main-header">
+    <h1>🏠 AI House Price Predictor</h1>
+    <p>Intelligent Property Valuation Powered by Advanced Machine Learning</p>
+</div>
+""", unsafe_allow_html=True)
+
+# Premium Hero Image Section
+st.markdown("""
+<div style='text-align: center; margin: 3rem 0; position: relative;'>
+    <div style='position: relative; border-radius: 25px; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.15);'>
+        <img src='https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=1200&h=500&fit=crop' 
+             style='width: 100%; height: 400px; object-fit: cover;'
+             alt='Luxury Modern House'>
+        <div style='position: absolute; top: 0; left: 0; right: 0; bottom: 0; 
+                    background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.9) 100%);'>
+        </div>
+        <div style='position: absolute; bottom: 2rem; left: 2rem; color: #2c3e50; text-align: left;'>
+            <h2 style='font-size: 2.2rem; margin: 0; font-weight: 700;'>Discover Your Home's True Value</h2>
+            <p style='font-size: 1.1rem; margin: 0.5rem 0 0 0; color: #6c757d; font-weight: 500;'>AI-Powered Precision Real Estate Valuation</p>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ============================================
+# LOAD SAVED MODEL
+# ============================================
+
 @st.cache_resource
-def load_trained_model():
-    """Load the trained model for the Streamlit app"""
+def load_model_files():
+    """Load all saved model files"""
     try:
-        model_package = joblib.load('sa_house_price_model.joblib')
-        return model_package
-    except FileNotFoundError:
-        return None
-
-def predict_house_price(model_package, input_data):
-    """Make prediction using the saved model"""
-    try:
-        # Extract components
-        model = model_package['best_model']
-        scaler = model_package['scaler']
-        feature_names = model_package['feature_names']
+        if not os.path.exists('house_model.pkl'):
+            return None, None, None, None
         
-        # Ensure input data has the same features
-        input_df = pd.DataFrame([input_data])
+        with open('house_model.pkl', 'rb') as f:
+            model = pickle.load(f)
+        with open('scaler.pkl', 'rb') as f:
+            scaler = pickle.load(f)
+        with open('feature_names.pkl', 'rb') as f:
+            feature_names = pickle.load(f)
+        with open('model_metadata.pkl', 'rb') as f:
+            metadata = pickle.load(f)
         
-        # Align columns with training data
-        for col in feature_names:
-            if col not in input_df.columns:
-                input_df[col] = 0  # Add missing columns with default value
-        
-        # Reorder columns to match training
-        input_df = input_df[feature_names]
-        
-        # Scale the features
-        input_scaled = scaler.transform(input_df)
-        
-        # Make prediction
-        prediction_log = model.predict(input_scaled)[0]
-        
-        # Convert back from log scale
-        prediction = np.expm1(prediction_log)
-        
-        return prediction
+        return model, scaler, feature_names, metadata
+    
     except Exception as e:
-        st.error(f"Prediction error: {e}")
-        return None
+        st.error(f"❌ Error loading model: {e}")
+        return None, None, None, None
 
-# Title with template styling
-st.markdown('<h1 class="main-header">🏠 SA House Price Predictor</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Predict house prices with AI-powered insights (ZAR)</p>', unsafe_allow_html=True)
-st.markdown("---")
+# Load the model
+model, scaler, feature_names, metadata = load_model_files()
 
-# Initialize session state
-if 'prediction_history' not in st.session_state:
-    st.session_state.prediction_history = []
+# ============================================
+# DISPLAY MODEL INFO
+# ============================================
 
-# Exchange rate
-USD_TO_ZAR = 18.50
-
-# South African provinces and major cities
-SA_PROVINCES = {
-    'Gauteng': ['Johannesburg', 'Pretoria', 'Sandton', 'Midrand', 'Centurion', 'Roodepoort'],
-    'Western Cape': ['Cape Town', 'Stellenbosch', 'Paarl', 'Somerset West', 'Bellville'],
-    'KwaZulu-Natal': ['Durban', 'Pietermaritzburg', 'Umhlanga', 'Ballito'],
-    'Eastern Cape': ['Port Elizabeth', 'East London', 'Grahamstown'],
-    'Mpumalanga': ['Nelspruit', 'Mbombela', 'Witbank', 'Middelburg'],
-    'Limpopo': ['Polokwane', 'Tzaneen', 'Mokopane'],
-    'North West': ['Rustenburg', 'Mahikeng', 'Klerksdorp'],
-    'Free State': ['Bloemfontein', 'Welkom', 'Bethlehem'],
-    'Northern Cape': ['Kimberley', 'Upington']
-}
-
-# Mobile-friendly sidebar
-with st.sidebar:
-    st.header("⚙️ Settings")
+if model is not None and metadata is not None:
     
-    with st.expander("💰 Currency & Display", expanded=True):
-        currency = st.radio("Currency", ["ZAR (Rands)", "USD (Dollars)"], horizontal=True)
-        prediction_method = st.radio("Prediction Method", ["AI Model", "Rule-Based"], 
-                                   help="AI Model uses trained machine learning, Rule-Based uses formula")
-        show_model_info = st.checkbox("Show Model Performance", value=True)
-
-# Load model (check if available)
-model_package = load_trained_model()
-if model_package:
-    st.sidebar.success("✅ AI Model Loaded")
-    if show_model_info:
-        st.sidebar.info(f"Model: {model_package['performance']['best_model_name']}")
-        st.sidebar.info(f"Accuracy: {model_package['performance']['r2_score']:.1%}")
-else:
-    st.sidebar.warning("❌ AI Model Not Found")
-    st.sidebar.info("Using rule-based predictions")
-
-# Main content in centered container
-st.markdown('<div class="centered-content">', unsafe_allow_html=True)
-
-# Location Section - Centered
-st.markdown('<div class="section-header">📍 Location Details</div>', unsafe_allow_html=True)
-col1, col2 = st.columns(2)
-with col1:
-    province = st.selectbox("Province", list(SA_PROVINCES.keys()))
-with col2:
-    city = st.selectbox("City/Area", SA_PROVINCES[province])
-
-# Property Features Section
-st.markdown('<div class="section-header">🏗️ Property Features</div>', unsafe_allow_html=True)
-
-# Basic Information
-with st.expander("📋 Basic Information", expanded=True):
-    col1, col2 = st.columns(2)
-    with col1:
-        year_built = st.number_input("Year Built", 1900, 2024, 2010, 1)
-        overall_qual = st.slider("Quality (1-10)", 1, 10, 7)
-    with col2:
-        year_remod = st.number_input("Year Remodeled", 1900, 2024, 2015, 1)
-        overall_cond = st.slider("Condition (1-10)", 1, 10, 7)
-
-# Area & Space
-with st.expander("📐 Area & Space", expanded=False):
-    col1, col2 = st.columns(2)
-    with col1:
-        lot_area = st.number_input("Lot Area (m²)", 100, 5000, 500, 50)
-        gr_liv_area = st.number_input("Living Area (m²)", 50, 1000, 150, 10)
-    with col2:
-        total_bsmt_sf = st.number_input("Basement (m²)", 0, 500, 50, 10)
-        garage_area = st.number_input("Garage (m²)", 0, 200, 40, 5)
-
-# Rooms & Layout
-st.markdown('<div class="section-header">🛏️ Rooms & Layout</div>', unsafe_allow_html=True)
-with st.expander("🚪 Room Details", expanded=True):
-    col1, col2 = st.columns(2)
-    with col1:
-        bedroom = st.number_input("Bedrooms", 1, 10, 3, 1)
-        full_bath = st.number_input("Full Baths", 1, 5, 2, 1)
-    with col2:
-        half_bath = st.number_input("Half Baths", 0, 3, 1, 1)
-        kitchen = st.number_input("Kitchens", 1, 3, 1, 1)
-
-# Property Style - Centered
-st.markdown('<div class="section-header">🏘️ Property Style</div>', unsafe_allow_html=True)
-col1, col2 = st.columns(2)
-with col1:
-    house_style = st.selectbox(
-        "House Style",
-        ['Single Story', 'Double Story', '1.5 Story', 'Split Level', 'Townhouse']
-    )
-with col2:
-    building_type = st.selectbox(
-        "Building Type",
-        ['Single Family', 'Townhouse End', 'Townhouse', 'Duplex', 'Cluster Home']
-    )
-
-# Additional Features
-st.markdown('<div class="section-header">🚗 Additional Features</div>', unsafe_allow_html=True)
-col1, col2 = st.columns(2)
-with col1:
-    garage_cars = st.number_input("Garage Capacity", 0, 4, 2, 1)
-    fireplaces = st.number_input("Fireplaces", 0, 3, 0, 1)
-with col2:
-    pool = st.checkbox("Swimming Pool")
-    security = st.checkbox("Security Estate")
-
-# Create feature dictionary for both methods
-input_features = {
-    'Province': province,
-    'City': city,
-    'LotArea': lot_area,
-    'GrLivArea': gr_liv_area,
-    'TotalBsmtSF': total_bsmt_sf,
-    'GarageArea': garage_area,
-    'YearBuilt': year_built,
-    'YearRemodAdd': year_remod,
-    'OverallQual': overall_qual,
-    'OverallCond': overall_cond,
-    'FullBath': full_bath,
-    'HalfBath': half_bath,
-    'BedroomAbvGr': bedroom,
-    'KitchenAbvGr': kitchen,
-    'GarageCars': garage_cars,
-    'Fireplaces': fireplaces,
-    'HouseStyle': house_style,
-    'BldgType': building_type,
-    'Pool': pool,
-    'Security': security,
-    'TotalSF': total_bsmt_sf + gr_liv_area,
-    'TotalBath': full_bath + (0.5 * half_bath),
-    'HouseAge': 2024 - year_built,
-    'RemodAge': 2024 - year_remod,
-    'HasPool': 1 if pool else 0,
-    'HasGarage': 1 if garage_area > 0 else 0,
-    'HasBsmt': 1 if total_bsmt_sf > 0 else 0,
-    'HasFireplace': 1 if fireplaces > 0 else 0,
-    'Has2ndFloor': 1 if gr_liv_area > 0 else 0,  # Simplified
-}
-
-# Rule-based calculation (your original method)
-def calculate_rule_based_price(input_features):
-    # Location price multipliers (simplified for rule-based)
-    location_multipliers = {
-        'Gauteng': {'Johannesburg': 1.15, 'Pretoria': 1.08, 'Sandton': 1.45, 'Midrand': 1.12, 'Centurion': 1.10, 'Roodepoort': 0.95},
-        'Western Cape': {'Cape Town': 1.35, 'Stellenbosch': 1.25, 'Paarl': 1.10, 'Somerset West': 1.15, 'Bellville': 1.05},
-        'KwaZulu-Natal': {'Durban': 1.05, 'Pietermaritzburg': 0.90, 'Umhlanga': 1.30, 'Ballito': 1.20},
-        'Eastern Cape': {'Port Elizabeth': 0.85, 'East London': 0.80, 'Grahamstown': 0.75},
-        'Mpumalanga': {'Nelspruit': 0.95, 'Mbombela': 0.95, 'Witbank': 0.85, 'Middelburg': 0.82},
-        'Limpopo': {'Polokwane': 0.80, 'Tzaneen': 0.75, 'Mokopane': 0.72},
-        'North West': {'Rustenburg': 0.85, 'Mahikeng': 0.75, 'Klerksdorp': 0.78},
-        'Free State': {'Bloemfontein': 0.82, 'Welkom': 0.75, 'Bethlehem': 0.78},
-        'Northern Cape': {'Kimberley': 0.75, 'Upington': 0.70}
-    }
+    # Success message with premium styling
+    st.balloons()
+    st.markdown("""
+    <div class="success-message">
+        <h2 style='color: white; margin: 0; font-size: 2rem;'>✅ AI Model Successfully Loaded</h2>
+        <p style='color: white; font-size: 1.2rem; margin: 0.5rem 0 0 0;'>Ready for accurate property valuation</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    base_price_usd = 50000
-    area_factor = input_features['GrLivArea'] * 900
-    lot_factor = input_features['LotArea'] * 150
-    basement_factor = input_features['TotalBsmtSF'] * 500
-    garage_factor = input_features['GarageArea'] * 600
-    quality_factor = input_features['OverallQual'] * 15000
-    condition_factor = input_features['OverallCond'] * 4000
-    age_penalty = max(0, input_features['HouseAge'] * 700)
-    remod_bonus = max(0, (40 - input_features['RemodAge']) * 400)
-    bathroom_factor = input_features['TotalBath'] * 10000
-    bedroom_factor = input_features['BedroomAbvGr'] * 7000
-    fireplace_factor = input_features['Fireplaces'] * 4000
-    pool_bonus = 50000 if input_features['Pool'] else 0
-    security_bonus = 30000 if input_features['Security'] else 0
-    
-    style_mults = {
-        'Double Story': 1.12, 'Single Story': 1.05, 
-        '1.5 Story': 1.08, 'Split Level': 1.04, 'Townhouse': 0.98
-    }
-    style_mult = style_mults.get(input_features['HouseStyle'], 1.0)
-    
-    location_mult = location_multipliers[input_features['Province']][input_features['City']]
-    
-    predicted_price_usd = (
-        base_price_usd + area_factor + lot_factor + basement_factor +
-        garage_factor + quality_factor + condition_factor -
-        age_penalty + remod_bonus + bathroom_factor + bedroom_factor +
-        fireplace_factor + pool_bonus + security_bonus
-    ) * location_mult * style_mult
-    
-    predicted_price_zar = predicted_price_usd * USD_TO_ZAR
-    predicted_price_zar *= np.random.uniform(0.98, 1.02)
-    
-    return predicted_price_usd, predicted_price_zar
-
-# Main tabs - properly centered
-st.markdown('</div>', unsafe_allow_html=True)  # Close centered-content
-
-# Tabs with centered content
-tab1, tab2, tab3 = st.tabs(["📊 Overview", "🔮 Prediction", "📜 History"])
-
-with tab1:
-    st.markdown('<div class="centered-content">', unsafe_allow_html=True)
-    st.markdown('<div class="section-header">Property Summary</div>', unsafe_allow_html=True)
-    
-    # Key metrics in a centered grid
+    # Model stats in premium cards
+    st.markdown("### 📊 Advanced Model Analytics")
     col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("📍 Location", f"{city}")
-        st.metric("🏗️ Built", str(year_built))
-    with col2:
-        st.metric("📏 Total Area", f"{input_features['TotalSF']:.0f} m²")
-        st.metric("⭐ Quality", f"{overall_qual}/10")
-    with col3:
-        st.metric("🛏️ Bedrooms", str(bedroom))
-        st.metric("🚿 Bathrooms", f"{input_features['TotalBath']}")
-    with col4:
-        st.metric("🚗 Garage", f"{garage_cars} cars")
-        st.metric("🔥 Fireplaces", str(fireplaces))
     
-    # Detailed information
-    with st.expander("📋 Detailed Property Information", expanded=False):
+    with col1:
+        st.metric(
+            label="🤖 AI Algorithm",
+            value=metadata['model_name'],
+            help="Advanced machine learning architecture"
+        )
+    
+    with col2:
+        st.metric(
+            label="🎯 Predictive Accuracy",
+            value=f"{metadata['r2']:.1%}",
+            delta="Exceptional Performance",
+            help="Model explanation power for price variations"
+        )
+    
+    with col3:
+        st.metric(
+            label="📉 Precision Error",
+            value=f"{metadata['rmse']:.4f}",
+            delta="High Precision",
+            delta_color="inverse",
+            help="Minimal prediction variance"
+        )
+    
+    with col4:
+        st.metric(
+            label="🔢 Feature Intelligence",
+            value=metadata['n_features'],
+            help="Comprehensive variable analysis"
+        )
+    
+    st.info(f"📅 **Model Training Date:** {metadata['training_date']}")
+    
+    st.markdown("---")
+    
+    # ============================================
+    # PREMIUM INPUT FORM WITH TABS
+    # ============================================
+    
+    st.markdown("### 🏡 Property Intelligence Dashboard")
+    
+    tab1, tab2, tab3 = st.tabs(["🏗️ Structural Details", "📐 Spatial Analysis", "✨ Premium Features"])
+    
+    with tab1:
         col1, col2 = st.columns(2)
+        
         with col1:
-            st.markdown("**Property Details**")
-            details_data = {
-                'Feature': ['Living Area', 'Lot Size', 'House Age', 'Basement', 'Garage Area'],
-                'Value': [
-                    f"{gr_liv_area} m²",
-                    f"{lot_area} m²",
-                    f"{input_features['HouseAge']} years",
-                    f"{total_bsmt_sf} m²",
-                    f"{garage_area} m²"
-                ]
-            }
-            st.dataframe(pd.DataFrame(details_data), use_container_width=True, hide_index=True)
+            st.markdown("#### 🏆 Quality Assessment")
+            overall_qual = st.slider(
+                "Overall Quality Rating",
+                1, 10, 7,
+                help="Architectural excellence and construction quality"
+            )
+            overall_cond = st.slider(
+                "Current Condition",
+                1, 10, 7,
+                help="Present state and maintenance level"
+            )
         
         with col2:
-            st.markdown("**Property Features**")
-            features_data = {
-                'Feature': ['Style', 'Type', 'Condition', 'Pool', 'Security'],
-                'Value': [
-                    house_style,
-                    building_type,
-                    f"{overall_cond}/10",
-                    "Yes" if pool else "No",
-                    "Yes" if security else "No"
-                ]
-            }
-            st.dataframe(pd.DataFrame(features_data), use_container_width=True, hide_index=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with tab2:
-    st.markdown('<div class="centered-content">', unsafe_allow_html=True)
-    st.markdown('<div class="section-header">Price Prediction</div>', unsafe_allow_html=True)
-    
-    # Show prediction method info
-    if prediction_method == "AI Model" and model_package:
-        st.info(f"🤖 Using {model_package['performance']['best_model_name']} (Accuracy: {model_package['performance']['r2_score']:.1%})")
-    else:
-        st.info("📊 Using rule-based calculation")
-    
-    # Centered prediction button
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        predict_btn = st.button("🔮 Calculate Price Prediction", type="primary", use_container_width=True)
-    
-    if predict_btn:
-        with st.spinner("🤖 Analyzing property features..."):
-            import time
-            time.sleep(1.2)
+            st.markdown("#### 📅 Historical Timeline")
+            year_built = st.number_input(
+                "Construction Year",
+                1850, 2024, 2000,
+                help="Original architectural creation date"
+            )
+            year_remod = st.number_input(
+                "Renovation Year",
+                1850, 2024, 2010,
+                help="Latest comprehensive modernization"
+            )
             
-            if prediction_method == "AI Model" and model_package:
-                # AI Model Prediction
-                try:
-                    # Prepare input data for the model
-                    model_input = {}
-                    for feature in model_package['feature_names']:
-                        if feature in input_features:
-                            model_input[feature] = input_features[feature]
-                        else:
-                            model_input[feature] = 0  # Default for missing features
-                    
-                    predicted_price_zar = predict_house_price(model_package, model_input)
-                    
-                    if predicted_price_zar:
-                        predicted_price_usd = predicted_price_zar / USD_TO_ZAR
-                        confidence_multiplier = 0.92  # Higher confidence for AI model
-                    else:
-                        st.error("AI prediction failed. Using rule-based method.")
-                        predicted_price_usd, predicted_price_zar = calculate_rule_based_price(input_features)
-                        confidence_multiplier = 0.85
-                except Exception as e:
-                    st.error(f"AI model error: {e}. Using rule-based method.")
-                    predicted_price_usd, predicted_price_zar = calculate_rule_based_price(input_features)
-                    confidence_multiplier = 0.85
-            else:
-                # Rule-based calculation
-                predicted_price_usd, predicted_price_zar = calculate_rule_based_price(input_features)
-                confidence_multiplier = 0.85
-            
-            # Calculate confidence range
-            lower_zar = predicted_price_zar * confidence_multiplier
-            upper_zar = predicted_price_zar * (2 - confidence_multiplier)
-            
-            if "ZAR" in currency:
-                display_price = predicted_price_zar
-                lower_bound = lower_zar
-                upper_bound = upper_zar
-                symbol = "R"
-            else:
-                display_price = predicted_price_usd
-                lower_bound = display_price * confidence_multiplier
-                upper_bound = display_price * (2 - confidence_multiplier)
-                symbol = "$"
-            
-            # Centered prediction display
+            house_age = 2024 - year_built
             st.markdown(f"""
-            <div class="prediction-box">
-                <h2 style="margin: 0; font-size: 1.5rem;">Predicted House Price</h2>
-                <h1 style="font-size: 2.5rem; margin: 1rem 0;">{symbol}{display_price:,.0f}</h1>
-                <p style="font-size: 1rem; margin: 0;">Confidence Range: {symbol}{lower_bound:,.0f} - {symbol}{upper_bound:,.0f}</p>
-                <p style="font-size: 0.8rem; margin: 0.5rem 0 0 0;">Method: {prediction_method}</p>
+            <div class='info-box' style='text-align: center;'>
+                <h4>🕐 Historical Context</h4>
+                <p style='font-size: 1.4rem; margin: 0; color: #2c3e50;'><strong>{house_age} Years</strong> of Architectural Heritage</p>
             </div>
             """, unsafe_allow_html=True)
-            
-            # Additional insights
-            with st.expander("📈 Detailed Analysis", expanded=False):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("💰 Predicted Price", f"{symbol}{display_price:,.0f}")
-                with col2:
-                    confidence_range = int((1 - confidence_multiplier) * 100)
-                    st.metric("📊 Confidence Range", f"±{confidence_range}%")
-                with col3:
-                    confidence_score = 80 if prediction_method == "Rule-Based" else 88
-                    st.metric("🎯 Accuracy", f"{confidence_score}%")
-                
-                price_per_sqm = display_price / input_features['TotalSF']
-                st.info(f"**Price per m²:** {symbol}{price_per_sqm:,.0f}")
-                
-                if "ZAR" in currency:
-                    st.info(f"**USD Equivalent:** ${predicted_price_usd:,.0f} (@ R{USD_TO_ZAR:.2f}/$)")
-                else:
-                    st.info(f"**ZAR Equivalent:** R{predicted_price_zar:,.0f} (@ R{USD_TO_ZAR:.2f}/$)")
-                
-                # Save to history
-                st.session_state.prediction_history.append({
-                    'Timestamp': pd.Timestamp.now(),
-                    'Location': f"{city}, {province}",
-                    'Area': input_features['TotalSF'],
-                    'Quality': overall_qual,
-                    'Price (ZAR)': predicted_price_zar,
-                    'Price (USD)': predicted_price_usd,
-                    'Method': prediction_method
-                })
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with tab3:
-    st.markdown('<div class="centered-content">', unsafe_allow_html=True)
-    st.markdown('<div class="section-header">Prediction History</div>', unsafe_allow_html=True)
     
-    if st.session_state.prediction_history:
-        history_df = pd.DataFrame(st.session_state.prediction_history)
+    with tab2:
+        col1, col2 = st.columns(2)
         
-        # Format for better display
-        display_df = history_df.copy()
-        display_df['Timestamp'] = display_df['Timestamp'].dt.strftime('%Y-%m-%d %H:%M')
-        display_df['Price (ZAR)'] = display_df['Price (ZAR)'].apply(lambda x: f"R{x:,.0f}")
-        display_df['Price (USD)'] = display_df['Price (USD)'].apply(lambda x: f"${x:,.0f}")
-        display_df['Area'] = display_df['Area'].apply(lambda x: f"{x:.0f} m²")
+        with col1:
+            st.markdown("#### 🏠 Living Spaces")
+            gr_liv_area = st.number_input(
+                "Primary Living Area (sq ft)",
+                500, 5000, 1500, 50,
+                help="Above ground luxurious living space"
+            )
+            
+            total_bsmt_sf = st.number_input(
+                "Basement Excellence (sq ft)",
+                0, 3000, 1000, 50,
+                help="Premium below-ground square footage"
+            )
+            
+            total_area = gr_liv_area + total_bsmt_sf
+            st.markdown(f"""
+            <div class='info-box' style='text-align: center;'>
+                <h4>📏 Total Luxury Space</h4>
+                <p style='font-size: 1.4rem; margin: 0; color: #2c3e50;'><strong>{total_area:,} sq ft</strong> of Refined Living</p>
+            </div>
+            """, unsafe_allow_html=True)
         
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
-        
-        # Centered clear button
-        col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("🗑️ Clear History", use_container_width=True):
-                st.session_state.prediction_history = []
-                st.rerun()
-    else:
-        st.info("No predictions yet. Make a prediction to see it here!")
-    st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown("#### 🌳 Estate Dimensions")
+            lot_area = st.number_input(
+                "Land Estate (sq ft)",
+                1000, 50000, 10000, 500,
+                help="Total prestigious land holding"
+            )
+            
+            garage_area = st.number_input(
+                "Automobile Gallery (sq ft)",
+                0, 1500, 400, 50,
+                help="Premium vehicle accommodation space"
+            )
+            
+            lot_acres = lot_area / 43560
+            st.markdown(f"""
+            <div class='info-box' style='text-align: center;'>
+                <h4>🌳 Estate Scale</h4>
+                <p style='font-size: 1.4rem; margin: 0; color: #2c3e50;'><strong>{lot_acres:.2f} Acres</strong> of Prime Real Estate</p>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    with tab3:
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("#### 🛏️ Sanctuary Suites")
+            bedroom = st.number_input("Bedroom Sanctuaries", 0, 10, 3)
+            st.markdown(f"<div style='text-align: center; font-size: 2rem; color: #2c3e50;'>🛏️ × {bedroom}</div>", unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("#### 🚿 Spa Facilities")
+            full_bath = st.number_input("Luxury Baths", 0, 5, 2)
+            half_bath = st.number_input("Powder Rooms", 0, 3, 1)
+            total_baths = full_bath + (0.5 * half_bath)
+            st.markdown(f"""
+            <div style='text-align: center;'>
+                <div style='font-size: 2rem; color: #2c3e50;'>🚿 × {full_bath} 🪞 × {half_bath}</div>
+                <p style='font-size: 1.2rem; color: #6c757d;'>Total: {total_baths} Bathing Facilities</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown("#### 🔥 Ambient Features")
+            fireplaces = st.number_input("Elegant Fireplaces", 0, 3, 1)
+            if fireplaces > 0:
+                st.markdown(f"<div style='text-align: center; font-size: 2rem; color: #2c3e50;'>🔥 × {fireplaces}</div>", unsafe_allow_html=True)
+            else:
+                st.markdown("<div style='text-align: center; font-size: 1.5rem; color: #adb5bd;'>❌ No Fireplace</div>", unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # ============================================
+    # PREMIUM PREDICTION BUTTON
+    # ============================================
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        predict_button = st.button(
+            "🔮 GENERATE INTELLIGENT VALUATION",
+            use_container_width=True,
+            type="primary"
+        )
+    
+    if predict_button:
+        
+        with st.spinner("🤖 AI is conducting comprehensive property analysis..."):
+            
+            import time
+            progress_bar = st.progress(0)
+            for i in range(100):
+                time.sleep(0.02)
+                progress_bar.progress(i + 1)
+            
+            try:
+                # Create input dataframe
+                input_data = pd.DataFrame({
+                    'MSSubClass': [60],
+                    'LotFrontage': [lot_area ** 0.5],
+                    'LotArea': [lot_area],
+                    'OverallQual': [overall_qual],
+                    'OverallCond': [overall_cond],
+                    'YearBuilt': [year_built],
+                    'YearRemodAdd': [year_remod],
+                    'MasVnrArea': [0],
+                    'BsmtFinSF1': [total_bsmt_sf * 0.7],
+                    'BsmtFinSF2': [0],
+                    'BsmtUnfSF': [total_bsmt_sf * 0.3],
+                    'TotalBsmtSF': [total_bsmt_sf],
+                    '1stFlrSF': [gr_liv_area * 0.6],
+                    '2ndFlrSF': [gr_liv_area * 0.4],
+                    'LowQualFinSF': [0],
+                    'GrLivArea': [gr_liv_area],
+                    'BsmtFullBath': [0],
+                    'BsmtHalfBath': [0],
+                    'FullBath': [full_bath],
+                    'HalfBath': [half_bath],
+                    'BedroomAbvGr': [bedroom],
+                    'KitchenAbvGr': [1],
+                    'TotRmsAbvGrd': [bedroom + 2],
+                    'Fireplaces': [fireplaces],
+                    'GarageYrBlt': [year_built],
+                    'GarageCars': [2 if garage_area > 0 else 0],
+                    'GarageArea': [garage_area],
+                    'WoodDeckSF': [0],
+                    'OpenPorchSF': [0],
+                    'EnclosedPorch': [0],
+                    '3SsnPorch': [0],
+                    'ScreenPorch': [0],
+                    'PoolArea': [0],
+                    'MiscVal': [0],
+                    'MoSold': [6],
+                    'YrSold': [2024],
+                    'TotalSF': [total_bsmt_sf + gr_liv_area],
+                    'TotalBath': [full_bath + 0.5 * half_bath],
+                    'HouseAge': [2024 - year_built],
+                    'RemodAge': [2024 - year_remod],
+                    'HasPool': [0],
+                    'HasGarage': [1 if garage_area > 0 else 0],
+                    'HasBsmt': [1 if total_bsmt_sf > 0 else 0],
+                    'HasFireplace': [1 if fireplaces > 0 else 0]
+                })
+                
+                # Add dummy columns
+                for feat in feature_names:
+                    if feat not in input_data.columns:
+                        input_data[feat] = 0
+                
+                input_data = input_data[feature_names]
+                input_scaled = scaler.transform(input_data)
+                prediction_log = model.predict(input_scaled)
+                prediction = np.expm1(prediction_log[0])
+                
+                # Premium prediction display
+                st.markdown(f"""
+                <div class="prediction-box">
+                    <h2>💰 INTELLIGENT VALUATION</h2>
+                    <h1 style='font-size: 4.5rem; color: white; margin: 2rem 0; text-shadow: 3px 3px 10px rgba(0,0,0,0.3); font-weight: 800;'>
+                        ${prediction:,.0f}
+                    </h1>
+                    <p style='font-size: 1.3rem; color: white; opacity: 0.95; font-weight: 500;'>
+                        Confidence Spectrum: ${prediction * 0.9:,.0f} - ${prediction * 1.1:,.0f}
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Premium detailed metrics
+                st.markdown("### 📈 Comprehensive Financial Analysis")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric(
+                        "💵 Market Valuation",
+                        f"${prediction:,.0f}",
+                        help="AI-calculated fair market value"
+                    )
+                
+                with col2:
+                    lower = prediction * 0.9
+                    st.metric(
+                        "📉 Conservative Estimate",
+                        f"${lower:,.0f}",
+                        delta=f"-10%",
+                        help="Lower valuation boundary"
+                    )
+                
+                with col3:
+                    upper = prediction * 1.1
+                    st.metric(
+                        "📈 Premium Estimate",
+                        f"${upper:,.0f}",
+                        delta=f"+10%",
+                        help="Upper valuation potential"
+                    )
+                
+                with col4:
+                    price_per_sqft = prediction / gr_liv_area
+                    st.metric(
+                        "📊 Value Density",
+                        f"${price_per_sqft:.0f}",
+                        help="Premium per square foot"
+                    )
+                
+                # Premium Property Summary
+                st.markdown("---")
+                st.markdown("### 🏡 Executive Property Summary")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("""
+                    <div class="info-box">
+                        <h4>📐 Spatial Excellence</h4>
+                        <ul style='list-style: none; padding: 0; font-size: 1.1rem; color: #495057;'>
+                            <li>🏠 Primary Living: <strong>{:,} sq ft</strong></li>
+                            <li>🌳 Land Estate: <strong>{:,} sq ft ({:.2f} acres)</strong></li>
+                            <li>🚗 Vehicle Gallery: <strong>{:,} sq ft</strong></li>
+                            <li>📦 Total Domain: <strong>{:,} sq ft</strong></li>
+                        </ul>
+                    </div>
+                    """.format(gr_liv_area, lot_area, lot_acres, garage_area, gr_liv_area + total_bsmt_sf), 
+                    unsafe_allow_html=True)
+                
+                with col2:
+                    st.markdown("""
+                    <div class="info-box">
+                        <h4>✨ Premium Attributes</h4>
+                        <ul style='list-style: none; padding: 0; font-size: 1.1rem; color: #495057;'>
+                            <li>⭐ Quality Excellence: <strong>{}/10</strong></li>
+                            <li>🛏️ Sanctuary Suites: <strong>{}</strong></li>
+                            <li>🚿 Bathing Facilities: <strong>{}</strong></li>
+                            <li>🔥 Ambient Features: <strong>{}</strong></li>
+                            <li>🕐 Heritage: <strong>{} years</strong></li>
+                        </ul>
+                    </div>
+                    """.format(overall_qual, bedroom, total_baths, fireplaces, 2024 - year_built),
+                    unsafe_allow_html=True)
+                
+                # Premium investment insights
+                st.markdown("---")
+                st.markdown("### 💡 Strategic Investment Intelligence")
+                
+                insights = []
+                if overall_qual >= 8:
+                    insights.append("✅ **Architectural Excellence** - Premium construction with superior materials")
+                if house_age < 10:
+                    insights.append("✅ **Contemporary Design** - Modern architectural standards and efficiency")
+                if price_per_sqft < 150:
+                    insights.append("💰 **Exceptional Value** - Competitive pricing with growth potential")
+                if lot_acres > 0.5:
+                    insights.append("🌳 **Estate Potential** - Significant land for future development")
+                if fireplaces > 1:
+                    insights.append("🔥 **Luxury Ambiance** - Multiple premium lifestyle features")
+                if total_area > 3000:
+                    insights.append("🏰 **Grand Residence** - Substantial living space for premium lifestyle")
+                
+                if insights:
+                    for insight in insights:
+                        st.markdown(f"""
+                        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                                    padding: 1.5rem; border-radius: 15px; margin: 1rem 0; 
+                                    box-shadow: 0 8px 25px rgba(102,126,234,0.2);'>
+                            <p style='color: white; font-size: 1.1rem; margin: 0; font-weight: 500;'>{insight}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.info("📋 **Solid Investment Foundation** - Reliable property with steady appreciation potential")
+                
+                # Additional luxury property image
+                st.markdown("""
+                <div style='text-align: center; margin: 3rem 0;'>
+                    <img src='https://images.unsplash.com/photo-1518780664697-55e3ad937233?w=800&h=400&fit=crop' 
+                         style='width: 100%; max-height: 400px; object-fit: cover; border-radius: 25px; box-shadow: 0 15px 40px rgba(0,0,0,0.1);'
+                         alt='Luxury Interior'>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            except Exception as e:
+                st.error(f"❌ Valuation analysis error: {e}")
+                st.info("Please verify all property details are accurately entered")
 
-# Model info in sidebar if enabled
-if show_model_info:
-    with st.sidebar:
-        st.markdown("---")
-        st.markdown("### 📊 Model Info")
-        if model_package:
-            st.metric("Algorithm", model_package['performance']['best_model_name'])
-            st.metric("Accuracy", f"{model_package['performance']['r2_score']:.1%}")
-            st.metric("Features", len(model_package['feature_names']))
-        else:
-            st.metric("Algorithm", "Rule-Based")
-            st.metric("Locations", f"{sum(len(c) for c in SA_PROVINCES.values())}")
-        st.metric("Exchange Rate", f"R{USD_TO_ZAR}")
+else:
+    # Premium model not loaded state
+    st.markdown("""
+    <div class="warning-message">
+        <h2 style='color: white; margin: 0; font-size: 2rem;'>⚠️ AI Intelligence Pending</h2>
+        <p style='color: white; font-size: 1.2rem; margin: 0.5rem 0 0 0;'>Advanced valuation model requires initialization</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class='info-box'>
+        <h3>🚀 Premium Setup Protocol</h3>
+        <ol style='font-size: 1.1rem; line-height: 2.5; color: #495057;'>
+            <li><strong>Save the intelligence script</strong> as <code style='background: #f8f9fa; padding: 0.3rem 0.6rem; border-radius: 6px; border: 1px solid #e9ecef;'>model_trainer_with_save.py</code></li>
+            <li><strong>Ensure premium datasets</strong> <code>train.csv</code> and <code>test.csv</code> are positioned</li>
+            <li><strong>Activate AI training</strong>:
+                <pre style='background: #2c3e50; color: white; padding: 1.5rem; border-radius: 12px; margin: 1rem 0; font-size: 1.1rem;'>
+python model_trainer_with_save.py</pre>
+            </li>
+            <li><strong>Await intelligence calibration</strong> (generates 4 premium model files)</li>
+            <li><strong>Reinitialize valuation dashboard</strong></li>
+        </ol>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Premium waiting state imagery
+    st.markdown("""
+    <div style='text-align: center; margin: 3rem 0;'>
+        <div style='position: relative; border-radius: 25px; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.1);'>
+            <img src='https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800&h=400&fit=crop' 
+                 style='width: 100%; height: 400px; object-fit: cover;'
+                 alt='Modern Architecture'>
+            <div style='position: absolute; top: 0; left: 0; right: 0; bottom: 0; 
+                        background: linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.9) 100%);'>
+            </div>
+            <div style='position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                        color: #2c3e50; text-align: center;'>
+                <h2 style='font-size: 2.2rem; margin: 0; font-weight: 700;'>Premium AI Valuation</h2>
+                <p style='font-size: 1.2rem; margin: 1rem 0 0 0; color: #6c757d; font-weight: 500;'>Activating Intelligent Property Analysis</p>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# Mobile-optimized footer
+# Premium footer
 st.markdown("---")
 st.markdown("""
-<div style='text-align: center; color: gray; padding: 1rem 0;'>
-    <p style='margin: 0.5rem 0;'><strong>🏠 South African House Price Prediction</strong></p>
-    <p style='font-size: 14px; margin: 0.5rem 0;'>AI-powered predictions | ZAR & USD support</p>
-    <p style='font-size: 12px; margin: 0.5rem 0;'>© 2025 | Built with Streamlit</p>
+<div style='text-align: center; padding: 3rem; background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%); 
+            border-radius: 25px; margin-top: 3rem; box-shadow: 0 10px 40px rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.05);'>
+    <h3 style='color: #2c3e50; margin-bottom: 1rem; font-size: 1.8rem;'>🏠 AI House Price Predictor</h3>
+    <p style='font-size: 1.1rem; margin: 0; color: #6c757d;'>Advanced Machine Learning Real Estate Intelligence</p>
+    <p style='font-size: 0.9rem; margin-top: 1rem; color: #adb5bd;'>© 2024 | Premium Analytics Platform | Crafted with Excellence</p>
 </div>
 """, unsafe_allow_html=True)
