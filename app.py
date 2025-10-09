@@ -14,7 +14,7 @@ import sys
 # Add parent directory to path to import our model
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from models.house_price_model import HousePriceModel
+from models.house_price_model import House_Price_Model
 
 # Page configuration for mobile
 st.set_page_config(
