@@ -475,7 +475,6 @@ model, scaler, feature_names, metadata = load_model_files()
 if model is not None and metadata is not None:
     
     # Success message with premium styling
-    st.balloons()
     st.markdown("""
     <div class="success-message">
         <h2 style='color: white; margin: 0; font-size: 1.5rem;'>✅ AI Model Successfully Loaded</h2>
