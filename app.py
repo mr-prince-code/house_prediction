@@ -907,6 +907,6 @@ st.markdown("""
             border-radius: 20px; margin-top: 2rem; box-shadow: 0 8px 30px rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.05);'>
     <h3 style='color: #2c3e50; margin-bottom: 1rem; font-size: 1.3rem;'>🏠 AI House Price Predictor</h3>
     <p style='font-size: 1rem; margin: 0; color: #6c757d;'>Machine Learning Real Estate Intelligence</p>
-    <p style='font-size: 0.8rem; margin-top: 1rem; color: #adb5bd;'>© 2024 | Premium Analytics Platform</p>
+    <p style='font-size: 0.8rem; margin-top: 1rem; color: #adb5bd;'>© 2025 | Premium Analytics Platform</p>
 </div>
 """, unsafe_allow_html=True)
